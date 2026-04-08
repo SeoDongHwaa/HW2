@@ -46,14 +46,17 @@ jobs:
           cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/sentiment-api:buildcache,mode=max
 
       - name: 기존 실행 중인 컨테이너 중지 및 파기
+        working-directory: /tmp
         run: |
           docker stop sentiment-api-container || true
           docker rm sentiment-api-container || true
 
       - name: Docker Hub에서 최신 이미지 Pull
+        working-directory: /tmp
         run: docker pull ${{ secrets.DOCKERHUB_USERNAME }}/sentiment-api:latest
 
       - name: 새 컨테이너 배포 및 실행
+        working-directory: /tmp
         run: |
           docker run -d \
             --name sentiment-api-container \
