@@ -1,0 +1,62 @@
+name: CI/CD Pipeline to Docker Hub
+
+# 코드가 main 브랜치에 push될 때마다 동작합니다.
+on:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  build-and-push:
+    # 사용자 요청에 따라 로컬 Self-Hosted Runner 환경에서 실행
+    runs-on: self-hosted
+
+    steps:
+      - name: 저장소 소스코드 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Docker Hub 로그인
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Docker 이미지 메타데이터(태그 등) 추출
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          # ${DOCKERHUB_USERNAME}/sentiment-api 형태의 이미지 이름 사용
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/sentiment-api
+          tags: |
+            type=sha,format=short
+            type=raw,value=latest
+
+      # Self-hosted 환경에서는 buildx 없이 일반 docker-clip build-push가 빠를 수 있습니다.
+      - name: Docker 이미지 빌드 및 푸시
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Self-hosted의 로컬 빌드 캐시를 재활용하여 속도를 최적화
+          cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/sentiment-api:buildcache
+          cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/sentiment-api:buildcache,mode=max
+
+      - name: 기존 실행 중인 컨테이너 중지 및 파기
+        run: |
+          docker stop sentiment-api-container || true
+          docker rm sentiment-api-container || true
+
+      - name: Docker Hub에서 최신 이미지 Pull
+        run: docker pull ${{ secrets.DOCKERHUB_USERNAME }}/sentiment-api:latest
+
+      - name: 새 컨테이너 배포 및 실행
+        run: |
+          docker run -d \
+            --name sentiment-api-container \
+            -p 8000:8000 \
+            --restart unless-stopped \
+            ${{ secrets.DOCKERHUB_USERNAME }}/sentiment-api:latest
